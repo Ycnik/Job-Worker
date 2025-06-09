@@ -1,0 +1,21 @@
+{
+  "name": "job-worker",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@faker-js/faker": "^9.8.0",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@camunda8/sdk": "^8.7.15",
+    "axios": "^1.9.0",
+    "node-fetch": "^3.3.2"
+  }
+}
