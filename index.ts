@@ -1,6 +1,5 @@
 import { Camunda8 } from "@camunda8/sdk";
 import { faker } from '@faker-js/faker';
-import { pruefeKreditwuerdigkeit } from "./kreditwürdigkeitcheck";
 
 const camunda = new Camunda8({
   CAMUNDA_OAUTH_URL: "https://login.cloud.camunda.io/oauth/token",
@@ -28,17 +27,75 @@ async function main() {
 
 // Der Worker holt die Kreditdaten vom JSON-Server
 zeebe.createWorker({
-  taskType: 'KreditauftragAufnehmen', // Der Task-Typ aus dem BPMN-Modell
+ taskType: 'KreditwürdigkeitCheck',
   taskHandler: async (job) => {
-    console.log(`Bearbeite Aufgabe für Prozessinstanz ${job.processInstanceKey}`);
-    console.log('Worker für "KreditdatenAufnehmen" gestartet');
+    console.log("List of variables from Zeebe: ", job.variables); 
+    const jobVariables = { ...job.variables };
+
+    function pruefeKreditwuerdigkeit() {
+        const einkommen = jobVariables.einkommen;
+        const verbindlichkeiten = jobVariables.verbindlichkeiten;
+        const vermoegen = jobVariables.vermoegen;
+        const schufaScore = jobVariables.schufaScore;
+        const insolvenz = jobVariables.insolvenz;
+        const kreditsumme = jobVariables.kreditsumme;
+        
+        const monatsrate = Number(kreditsumme) / Number(jobVariables.laufzeit);
+        const einkommensquote = monatsrate / Number(einkommen);
+
+        const nettovermoegen = Number(vermoegen) - Number(verbindlichkeiten);
+
+         const hatNegativeMerkmale =
+            insolvenz === false &&
+            Number(schufaScore) > 65 &&
+            einkommensquote < 0.5 && 
+            nettovermoegen > Number(kreditsumme) * 0.2;
+
+        return hatNegativeMerkmale;
+    }
+
+    jobVariables.kreditwuerdig = pruefeKreditwuerdigkeit();
+    
+    console.log("Process variables retrieved from the prufeKreditwuerdigkeit: ", jobVariables);
+    console.log('Kreditwürdigkeit berechnet:');
+    return job.complete(jobVariables);
+  },
+});
+
+// Der Worker holt die Kreditdaten vom JSON-Server
+zeebe.createWorker({
+  taskType: 'Datenhochladen', // Der Task-Typ aus dem BPMN-Modell
+  taskHandler: async (job) => {
+    console.log('Worker für "KreditwürdigkeitCheck" gestartet');
       // Abrufen der Kreditdaten vom JSON-Server
       const axios = require('axios');
       const response = await axios.get('http://localhost:3001/daten');
       const kreditdaten = response.data;
 
-      console.log('Kreditdaten abgerufen:', kreditdaten);
-      return job.complete(kreditdaten);
+       // 2. Neue Daten vorbereiten
+      const neuerEintrag: KreditDaten = {
+      name: String(job.variables.name),
+      schufascore: Number(job.variables.schufaScore),
+      einkommen: Number(job.variables.einkommen),
+      insolvenz: Boolean(job.variables.insolvenz),
+      kreditsumme: Number(job.variables.kreditsumme),
+      vermoegen: Number(job.variables.vermoegen),
+      verbindlichkeiten: Number(job.variables.verbindlichkeiten),
+      laufzeit: Number(job.variables.laufzeit)
+      };
+
+      // 3. Hochladen der neuen Daten an den JSON-Server
+      const uploadResponse = await axios.post('http://localhost:3001/daten', neuerEintrag, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+
+      console.log("Neue Daten erfolgreich hochgeladen:", uploadResponse.data);
+
+      console.log('Kreditdaten abgerufen:');
+      return job.complete(job.variables);
   },
 });
 

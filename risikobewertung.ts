@@ -6,6 +6,7 @@ type KreditDaten = {
   vermoegen: number;
   verbindlichkeiten: number;
   laufzeit: number; // in Monaten
+  einkommen: number;
 };
 
 function bewerteKreditRisiko(daten: KreditDaten): number {
