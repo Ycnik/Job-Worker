@@ -1,68 +1,56 @@
-// Typen definieren und exportieren
 
-export interface Vermoegen {
-  sparguthaben: number;
-  immobilienwert: number;
-  wertpapiere: number;
-}
-
-export interface Verbindlichkeiten {
-  laufende_kredite: number;
-  kreditkartenschulden: number;
-  sonstige_fixkosten: number;
-}
-
-export interface FinanzielleSituation {
-  einkommen_monatlich: number;
-  vermoegen: Vermoegen;
-  verbindlichkeiten: Verbindlichkeiten;
-}
-
-export interface Bonitaetsauskunft {
-  schufa_score: number;
-  zahlungsverzoegerungen: number;
-  mahnverfahren: boolean;
-  inkasso_faelle: boolean;
-  insolvenz: boolean;
-}
-
-export interface Kreditinformationen {
-  gewunschte_kreditsumme: number;
-  laufzeit_monate: number;
-  verwendungszweck: string;
-}
 
 export interface KreditDaten {
-  finanzielle_situation: FinanzielleSituation;
-  bonitaetsauskunft: Bonitaetsauskunft;
-  kreditinformationen: Kreditinformationen;
-}
-
-export interface KreditPruefungErgebnis {
-  kreditWuerdig: boolean;
-  gruende: {
-    einkommenOK: boolean;
-    schufaOK: boolean;
-    keineNegativmerkmale: boolean;
-    vermoegenOK: boolean;
+  daten: {
+    finanzielle_situation: {
+      einkommen_monatlich: number;
+      vermoegen: {
+        sparguthaben: number;
+        immobilienwert: number;
+        wertpapiere: number;
+      };
+      verbindlichkeiten: {
+        laufende_kredite: number;
+        kreditkartenschulden: number;
+        sonstige_fixkosten: number;
+      };
+    };
+    bonitaetsauskunft: {
+      schufa_score: number;
+      zahlungsverzoegerungen: number;
+      mahnverfahren: boolean;
+      inkasso_faelle: boolean;
+      insolvenz: boolean;
+    };
+    kreditinformationen: {
+      gewunschte_kreditsumme: number;
+      laufzeit_monate: number;
+      verwendungszweck: string;
+    };
   };
 }
 
 // Funktion exportieren
 
-export function pruefeKreditwuerdigkeit(daten: KreditDaten): KreditPruefungErgebnis {
-  const einkommen = daten.finanzielle_situation.einkommen_monatlich;
-  const verbindlichkeiten = daten.finanzielle_situation.verbindlichkeiten;
-  const vermoegen = daten.finanzielle_situation.vermoegen;
-  const schufaScore = daten.bonitaetsauskunft.schufa_score;
-  const hatNegativeMerkmale =
-    daten.bonitaetsauskunft.zahlungsverzoegerungen > 0 ||
-    daten.bonitaetsauskunft.mahnverfahren ||
-    daten.bonitaetsauskunft.inkasso_faelle ||
-    daten.bonitaetsauskunft.insolvenz;
+export function pruefeKreditwuerdigkeit(): boolean {
 
-  const kreditSumme = daten.kreditinformationen.gewunschte_kreditsumme;
-  const laufzeit = daten.kreditinformationen.laufzeit_monate;
+
+  const axios = require('axios');
+  const response = axios.get('http://localhost:3001/daten');
+  const daten = response.data;
+  const einkommen = daten.einkommen;
+  const verbindlichkeiten = daten.verbindlichkeiten;
+  const vermoegen = daten.vermoegen;
+  const schufaScore = daten.schufa_score;
+
+  // Überprüfen auf negative Merkmale in der Bonitätsauskunft
+  const hatNegativeMerkmale =
+    !daten.insolvenz &&
+    daten.schufascore > 65;
+
+  // Kreditinformationen
+  const kreditSumme = daten.daten.kreditinformationen.gewunschte_kreditsumme;
+  const laufzeit = daten.daten.kreditinformationen.laufzeit_monate;
 
   // Monatliche Kreditrate (vereinfachte Annahme ohne Zinsen)
   const monatlicheRate = kreditSumme / laufzeit;
@@ -75,16 +63,6 @@ export function pruefeKreditwuerdigkeit(daten: KreditDaten): KreditPruefungErgeb
   const istSchufaGut = schufaScore >= 90;
   const hatGenugVermoegen = (vermoegen.sparguthaben + vermoegen.wertpapiere) >= kreditSumme / 2;
 
-  // Entscheidung
-  const kreditWuerdig = istEinkommenAusreichend && istSchufaGut && !hatNegativeMerkmale && hatGenugVermoegen;
-
-  return {
-    kreditWuerdig,
-    gruende: {
-      einkommenOK: istEinkommenAusreichend,
-      schufaOK: istSchufaGut,
-      keineNegativmerkmale: !hatNegativeMerkmale,
-      vermoegenOK: hatGenugVermoegen,
-    },
-  };
+  // Rückgabe der Entscheidung (true oder false)
+  return istEinkommenAusreichend && istSchufaGut && !hatNegativeMerkmale && hatGenugVermoegen;
 }
