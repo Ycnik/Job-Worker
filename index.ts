@@ -1,5 +1,4 @@
 import { Camunda8 } from "@camunda8/sdk";
-import { faker } from '@faker-js/faker';
 
 const camunda = new Camunda8({
   CAMUNDA_OAUTH_URL: "https://login.cloud.camunda.io/oauth/token",
@@ -25,87 +24,104 @@ async function main() {
   }
 }
 
-// Der Worker holt die Kreditdaten vom JSON-Server
 zeebe.createWorker({
  taskType: 'KreditwürdigkeitCheck',
   taskHandler: async (job) => {
+   
+    
     console.log("List of variables from Zeebe: ", job.variables); 
     const jobVariables = { ...job.variables };
 
-    function pruefeKreditwuerdigkeit() {
-        const einkommen = jobVariables.einkommen;
-        const verbindlichkeiten = jobVariables.verbindlichkeiten;
-        const vermoegen = jobVariables.vermoegen;
-        const schufaScore = jobVariables.schufaScore;
-        const insolvenz = jobVariables.insolvenz;
-        const kreditsumme = jobVariables.kreditsumme;
-        
-        const monatsrate = Number(kreditsumme) / Number(jobVariables.laufzeit);
-        const einkommensquote = monatsrate / Number(einkommen);
+    //Prozessvariablen als Typescript-Variablen deklarieren
+    const id = String(jobVariables.id);
+    const name = String(jobVariables.name);
+    const einkommen = Number(jobVariables.einkommen);
+    const verbindlichkeiten = Number(jobVariables.verbindlichkeiten);
+    const vermoegen = Number(jobVariables.vermoegen);
+    const schufaScore = Number(jobVariables.schufaScore);
+    const insolvenz = jobVariables.insolvenz;
+    const kreditsumme = Number(jobVariables.kreditsumme);
+    const laufzeit = Number(jobVariables.laufzeit);
 
-        const nettovermoegen = Number(vermoegen) - Number(verbindlichkeiten);
+    // Prüfung auf Stornierung, wenn ja job.error zurückgeben und Error-Boundary-Event KREDITPRUEFUNG_FEHLER wird ausgelöst
+    if (jobVariables.storniert === true) {
+      console.log("⛔️ Prozess wurde storniert – Job wird nicht weiter ausgeführt.");
+      return job.error('KREDITPRUEFUNG_FEHLER', 'Prozess wurde vom Benutzer abgebrochen.');
+    }
+
+    //Daten an Json-Server übergeben
+    console.log("Daten an JSON-Server geben");
+    const axios = require('axios');
+    try {
+      const jsonDaten = {
+      id: id,
+      name: name,
+      insolvenz: insolvenz,
+      einkommen: einkommen,
+      kreditsumme: kreditsumme,
+      schufaScore: schufaScore,
+      laufzeit: laufzeit,
+      verbindlichkeiten: verbindlichkeiten,
+      vermoegen: vermoegen
+    };
+      const uploadResponse = await axios.post('http://localhost:3001/daten', jsonDaten, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      console.log('Upload auf JSON-Server erfolgreich:', uploadResponse.data);
+      // Wenn Daten nicht an Json-Server übertragen werdenjob.error zurückgeben und Error-Boundary-Event KREDITPRUEFUNG_FEHLER wird ausgelöst
+    } catch (error) {
+      console.error('Fehler beim Hochladen:');
+      return job.error("KREDITPRUEFUNG_FEHLER");
+    }
+
+    try {
+    // Prüfung auf gültige Zahlenwerte oder null
+    if (
+      isNaN(einkommen) || einkommen <= 0 ||
+      isNaN(verbindlichkeiten) || verbindlichkeiten < 0 ||
+      isNaN(vermoegen) || vermoegen < 0 ||
+      isNaN(schufaScore) || schufaScore <= 0 ||
+      typeof insolvenz !== 'boolean' ||
+      isNaN(kreditsumme) || kreditsumme <= 0 ||
+      isNaN(laufzeit) || laufzeit <= 0
+    ) {
+      throw new Error("Ungültige oder fehlende Eingabedaten für Kreditprüfung");
+    }
+
+    //Prüfung der Kreditwürdigkeit als Funktion
+    function pruefeKreditwuerdigkeit() {  
+        const monatsrate = kreditsumme / laufzeit;
+        const einkommensquote = monatsrate / einkommen;
+
+        const nettovermoegen = vermoegen - verbindlichkeiten;
 
          const hatNegativeMerkmale =
             insolvenz === false &&
-            Number(schufaScore) > 65 &&
+            schufaScore > 65 &&
             einkommensquote < 0.5 && 
-            nettovermoegen > Number(kreditsumme) * 0.2;
+            nettovermoegen > kreditsumme * 0.2;
 
         return hatNegativeMerkmale;
     }
 
+    //Setzen der Prozessvariable "kreditwuerdig" auf ermittelten boolean wert
     jobVariables.kreditwuerdig = pruefeKreditwuerdigkeit();
-    
+
+    //Neu gesetze Prozessvariablen ausgeben
     console.log("Process variables retrieved from the prufeKreditwuerdigkeit: ", jobVariables);
-    console.log('Kreditwürdigkeit berechnet:');
+    console.log('Kreditwürdigkeit berechnet');
     return job.complete(jobVariables);
-  },
-});
-
-// Der Worker holt die Kreditdaten vom JSON-Server
-zeebe.createWorker({
-  taskType: 'Datenhochladen', // Der Task-Typ aus dem BPMN-Modell
-  taskHandler: async (job) => {
-    console.log('Worker für "KreditwürdigkeitCheck" gestartet');
-      // Abrufen der Kreditdaten vom JSON-Server
-      const axios = require('axios');
-      const response = await axios.get('http://localhost:3001/daten');
-      const kreditdaten = response.data;
-
-       // 2. Neue Daten vorbereiten
-      const neuerEintrag: KreditDaten = {
-      name: String(job.variables.name),
-      schufascore: Number(job.variables.schufaScore),
-      einkommen: Number(job.variables.einkommen),
-      insolvenz: Boolean(job.variables.insolvenz),
-      kreditsumme: Number(job.variables.kreditsumme),
-      vermoegen: Number(job.variables.vermoegen),
-      verbindlichkeiten: Number(job.variables.verbindlichkeiten),
-      laufzeit: Number(job.variables.laufzeit)
-      };
-
-      // 3. Hochladen der neuen Daten an den JSON-Server
-      const uploadResponse = await axios.post('http://localhost:3001/daten', neuerEintrag, {
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
-    
-
-      console.log("Neue Daten erfolgreich hochgeladen:", uploadResponse.data);
-
-      console.log('Kreditdaten abgerufen:');
-      return job.complete(job.variables);
-  },
-});
-
-zeebe.createWorker({
-  taskType: 'RisikoBewerten', // Der Task-Typ aus dem BPMN-Modell
-  taskHandler: async (job) => {
-    console.log('Risikobewerten');
-      return job.complete();
-  },
-});
+  
+    //Job-error wird zurückgegeben der in BPMN das Error-Boundary-Event KREDITPRUEFUNG_FEHLER auslöst
+ } catch (error) {
+      console.error('Fehler bei der Kreditwürdigkeitsprüfung:');
+      return job.error("KREDITPRUEFUNG_FEHLER");
+    } finally {
+      console.log("Job Worker ist fertig");
+    }
+}});
   
 main().catch(err => console.error(err));
 
