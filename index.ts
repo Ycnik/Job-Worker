@@ -15,6 +15,10 @@ const zeebe = camunda.getZeebeGrpcApiClient({
 const NUM_INSTANCES = 1; // Set this to the number of instances you want to create
 
 async function main() {
+  
+                      
+
+
   for (let i = 0; i < NUM_INSTANCES; i++) {
     const p = await zeebe.createProcessInstance({
       bpmnProcessId: `orderProcess`,
@@ -97,7 +101,7 @@ zeebe.createWorker({
 
         const nettovermoegen = vermoegen - verbindlichkeiten;
 
-         const hatNegativeMerkmale =
+        const hatNegativeMerkmale =
             insolvenz === false &&
             schufaScore > 65 &&
             einkommensquote < 0.5 && 
@@ -110,7 +114,7 @@ zeebe.createWorker({
     jobVariables.kreditwuerdig = pruefeKreditwuerdigkeit();
 
     //Neu gesetze Prozessvariablen ausgeben
-    console.log("Process variables retrieved from the prufeKreditwuerdigkeit: ", jobVariables);
+    console.log("Process variables retrieved from the prufeKreditwuerdigkeit: ");
     console.log('Kreditwürdigkeit berechnet');
     return job.complete(jobVariables);
   
@@ -122,6 +126,52 @@ zeebe.createWorker({
       console.log("Job Worker ist fertig");
     }
 }});
-  
+
+//Code-Idee für Worker der optimale Zeit berechnet
+zeebe.createWorker({
+ taskType: 'CarbonReductor',
+  taskHandler: async (job) => {
+
+  const axios = require('axios');
+
+                      async function fetchCarbonForecast() {
+                        const url = 'https://forecast.carbon-aware-computing.com/emissions/forecasts/current';
+
+                        const params = {
+                          location: 'de',
+                          dataStartAt: '2025-06-19T09:28:04.0000000+00:00',
+                          dataEndAt: '2025-06-19T14:28:04.0000000+00:00',
+                          windowSize: 10
+                        };
+
+                        const headers = {
+                          'accept': 'application/json',
+                          'x-api-key': 'qQ0fAC1QgHiuqC3z0Zal/DDEODiMbczEPgTe4Ecxy1WN+XnMtdBPQsPQSn34Ue93'
+                        };
+
+                        try {
+                          const response = await axios.get(url, { params, headers });
+                          console.log('Carbon Forecast:', response.data);
+                          console.log(response.data[0].optimalDataPoints[0].timestamp);
+                          console.log(response.data[0].optimalDataPoints[0].value);
+                          return response.data[0].optimalDataPoints[0].value;
+                        } catch (error: any) {
+                          if (error.response) {
+                            console.error('API Error:', error.response.status, error.response.data);
+                          } else {
+                            console.error('Request Error:', error.message);
+                          }
+                        }
+                      }
+
+                      // Direkt ausführen
+                      const jobVariables = { ...job.variables };
+                      const value = await fetchCarbonForecast();
+                      
+                      jobVariables.gespartesC02 = value;
+                      return job.complete(jobVariables);
+}});
+
+
 main().catch(err => console.error(err));
 
